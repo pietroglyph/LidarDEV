@@ -44,7 +44,6 @@ public class LidarServer {
             String s;
             while ((s = response.readLine()) != null)
             {
-                // TODO: (For Darwin) figure out if this is the id of your serial bridge
                 if (s.equals("usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"))
                     return true;
             }
@@ -145,7 +144,7 @@ public class LidarServer {
                 double distance = Double.parseDouble(parts[2]);
                 if (distance != 0)
                     //mLidarProcessor.addPoint(new LidarPoint(ms_ago, angle, distance), isNewScan);
-                    System.out.print("Found a valid point!");
+                    // System.out.print("Found a valid point!");
             } catch (java.lang.NumberFormatException e) {
                 e.printStackTrace();
             }
