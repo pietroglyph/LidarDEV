@@ -13,26 +13,32 @@ public class Main
     private static Looper mLooper;
     private static LidarProcessor mLidarProcessor;
     private static InterpolatingTreeMap<InterpolatingDouble, Pose2d> mPoses;
+    private static final int kObservationBufferSize = 100;
     public static void main(String[] args)
     {
+        Logger.setVerbosity("DEBUG");
+
+        mPoses = new InterpolatingTreeMap<InterpolatingDouble, Pose2d>(kObservationBufferSize);
+        mPoses.put(new InterpolatingDouble(0.0), new Pose2d());
+
         mLooper = new Looper();
         Logger.debug("LIDAR starting...");
         mLidarProcessor = LidarProcessor.getInstance();
         mLooper.register(mLidarProcessor);
         boolean started = LidarServer.getInstance().start();
-        Logger.debug("LIDAR status" + (started ? "started" : "failed to start"));
+        Logger.debug("LIDAR status " + (started ? "started" : "failed to start"));
 
         mLooper.start();
 
         while (true)
         {
-            mPoses.put(new InterpolatingDouble((double) (System.currentTimeMillis() % 1000)), mLidarProcessor.doICP());
-            Logger.debug("foo");
+            if (LidarServer.getInstance().isLidarConnected())
+                mPoses.put(new InterpolatingDouble((double) (System.currentTimeMillis() % 1000)), mLidarProcessor.doICP());
         }
     }
 
     public static Pose2d getPose(double timestamp)
     {
-        return mPoses.get(timestamp);
+        return mPoses.get(new InterpolatingDouble(timestamp));
     }
 }
