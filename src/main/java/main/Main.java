@@ -1,5 +1,7 @@
 package main;
 
+import java.util.concurrent.TimeUnit;
+
 import lib.Looper;
 import lib.util.InterpolatingDouble;
 import lib.util.InterpolatingTreeMap;
@@ -33,7 +35,7 @@ public class Main
         while (true)
         {
             if (LidarServer.getInstance().isLidarConnected())
-                mPoses.put(new InterpolatingDouble((double) (System.currentTimeMillis() % 1000)), mLidarProcessor.doICP());
+                mPoses.put(new InterpolatingDouble(System.currentTimeMillis() / 1000d), mLidarProcessor.doICP());
         }
     }
 

@@ -47,7 +47,7 @@ public class Looper
             {
                 if (running_)
                 {
-                    double now = System.currentTimeMillis() % 1000;
+                    double now = System.currentTimeMillis() / 1000d;
 
                     for (Loop loop : loops_)
                     {
@@ -82,7 +82,7 @@ public class Looper
             Logger.notice("Looper starting subsystem loops");
             synchronized (taskRunningLock_)
             {
-                timestamp_ = System.currentTimeMillis() % 1000;
+                timestamp_ = System.currentTimeMillis() / 1000d;
                 for (Loop loop : loops_)
                 {
                     loop.onStart(timestamp_);
@@ -106,7 +106,7 @@ public class Looper
             synchronized (taskRunningLock_)
             {
                 running_ = false;
-                timestamp_ = System.currentTimeMillis() % 1000;
+                timestamp_ = System.currentTimeMillis() / 1000d;
                 for (Loop loop : loops_)
                 {
                     Logger.notice("Looper stopping " + loop);

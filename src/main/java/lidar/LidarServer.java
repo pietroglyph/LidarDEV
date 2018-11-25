@@ -19,7 +19,7 @@ import java.io.InputStreamReader;
  */
 public class LidarServer {
     private static LidarServer mInstance = null;
-    //private final LidarProcessor mLidarProcessor = LidarProcessor.getInstance();
+    private final LidarProcessor mLidarProcessor;
     private static BufferedReader mBufferedReader;
     private boolean mRunning = false;
     private Thread mThread;
@@ -33,7 +33,9 @@ public class LidarServer {
         return mInstance;
     }
 
-    public LidarServer() {}
+    public LidarServer() {
+        mLidarProcessor = LidarProcessor.getInstance();
+    }
 
     public boolean isLidarConnected() {
         try {
@@ -130,21 +132,21 @@ public class LidarServer {
             line = line.substring(0, line.length() - 1);
         }
 
-        long curSystemTime = System.currentTimeMillis();
-
-        //double curFPGATime = Timer.getFPGATimestamp();
-
         String[] parts = line.split(",");
         if (parts.length == 3) {
             try {
+                // It is assumed that ts is in sync with our system's clock
                 long ts = Long.parseLong(parts[0]);
-                long ms_ago = curSystemTime - ts;
-                //double normalizedTs = curFPGATime - (ms_ago / 1000.0f);
+                // Timestamps are in seconds, so we have to convert
+                // We don't need to do the msAgo thing like in the actual codebase
+                // because our timestamps use the Unix epoch, and the timestamps
+                // from the sensor also use the Unix epoch. In the actual codebase,
+                // timestamps use the system start up as an epoch.
+                double normalizedTs = ts / 1000d;
                 double angle = Double.parseDouble(parts[1]);
                 double distance = Double.parseDouble(parts[2]);
                 if (distance != 0)
-                    //mLidarProcessor.addPoint(new LidarPoint(ms_ago, angle, distance), isNewScan);
-                    // System.out.print("Found a valid point!");
+                    mLidarProcessor.addPoint(new LidarPoint(normalizedTs, angle, distance), isNewScan);
             } catch (java.lang.NumberFormatException e) {
                 e.printStackTrace();
             }
