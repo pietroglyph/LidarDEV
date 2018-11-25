@@ -5,8 +5,8 @@ package lidar;
 
 //import com.spartronics4915.lib.math.Translation2d;
 //import com.spartronics4915.lib.math.Pose2d;
-import lib.RobotState;
 
+import main.Main;
 import lib.math.Translation2d;
 import lib.math.Pose2d;
 
@@ -21,12 +21,11 @@ class LidarPoint {
     public final double timestamp;
     public final double angle;
     public final double distance;
-    private RobotState mRobotState = RobotState.getInstance();
 
     private final static int MAX_ENTRIES = 10;
     private final static LinkedHashMap<Double, Pose2d> mRobotPoseMap = new LinkedHashMap<Double, Pose2d>() {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<Double, Pose2d> eldest) {
+        protected boolean removeEldestEntry(Map.Entry eldest) {
             return this.size() > MAX_ENTRIES;
         }
     };
@@ -54,7 +53,7 @@ class LidarPoint {
         if (mRobotPoseMap.containsKey(timestamp)) {
             robotPose = mRobotPoseMap.get(timestamp);
         } else {
-            robotPose = mRobotState.getFieldToLidar(timestamp);
+            robotPose = Main.getPose(timestamp);
             mRobotPoseMap.put(timestamp, robotPose);
         }
 
