@@ -1,14 +1,23 @@
 package lib;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import lib.Constants;
 
-import util.CrashTrackingRunnable;
+import lib.util.CrashTrackingRunnable;
 
 //import com.spartronics4915.lib.util.Logger;
-import util.Logger;
+import lib.util.Logger;
 
 /**
  * This code runs all of the robot's loops. Loop objects are stored in a List
@@ -22,6 +31,7 @@ public class Looper
 
     private boolean running_;
 
+    private ScheduledExecutorService scheduler_ = Executors.newScheduledThreadPool(1);
     private final List<Loop> loops_;
     private final Object taskRunningLock_ = new Object();
     private double timestamp_ = 0;
@@ -79,7 +89,10 @@ public class Looper
                 }
                 running_ = true;
             }
-            notifier_.startPeriodic(kPeriod);
+            while (!scheduler_.isTerminated())
+            {} // Woo possibly infinite loops
+            scheduler_ = Executors.newScheduledThreadPool(1); // XXX: Who knows if this works
+            scheduler_.scheduleAtFixedRate(runnable_, 0 /* Initial delay of 0 ms */, (long) kPeriod, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -88,7 +101,7 @@ public class Looper
         if (running_)
         {
             Logger.notice("Looper stopping subsystem loops");
-            notifier_.stop();
+            scheduler_.shutdown();
             synchronized (taskRunningLock_)
             {
                 running_ = false;

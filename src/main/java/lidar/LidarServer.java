@@ -38,15 +38,14 @@ public class LidarServer {
     public boolean isLidarConnected() {
         try {
             Runtime r = Runtime.getRuntime();
-            // Changed to Darwin's binary
-            // Pointing to chezy_lidar binary
-            Process p = r.exec("/bin/ls ~/Programming/Robotics/LIDAR/254-sdk/sdk/output/Linux/Release");
+            Process p = r.exec("/bin/ls /dev/serial/by-id/");
             InputStreamReader reader = new InputStreamReader(p.getInputStream());
             BufferedReader response = new BufferedReader(reader);
             String s;
-            while ((s = response.readLine()) != null) {
-                // Name of the binary
-                if (s.equals("chezy_lidar"))
+            while ((s = response.readLine()) != null)
+            {
+                // TODO: (For Darwin) figure out if this is the id of your serial bridge
+                if (s.equals("usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"))
                     return true;
             }
         } catch (IOException e) {

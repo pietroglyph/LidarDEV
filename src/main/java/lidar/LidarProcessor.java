@@ -14,6 +14,8 @@ import lib.Loop;
 import lib.math.Translation2d;
 import lib.math.Pose2d;
 
+import main.Main;
+
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -192,22 +194,16 @@ public class LidarProcessor implements Loop {
         return list;
     }
 
-    /*
     public Pose2d doICP() {
         lock.readLock().lock();
         try {
-            Pose2d guess = mRobotState.getFieldToLidar(getCurrentScan().getTimestamp());
+            Pose2d guess = Main.getPose(getCurrentScan().getTimestamp());
             Pose2d finalPose = icp.doICP(getCulledPoints(), new Transform(guess).inverse()).inverse().toPose2d();
-                    + " " + finalPose.getRotation().getDegrees());
-            // TODO: Maybe put the processing into its own looper and save past poses (like
-            // RobotState)
             return finalPose;
         } finally {
             lock.readLock().unlock();
         }
     }
-
-    */
 
     public Translation2d getTowerPosition() {
         lock.readLock().lock();
