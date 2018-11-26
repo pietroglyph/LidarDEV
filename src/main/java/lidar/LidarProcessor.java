@@ -7,6 +7,7 @@ import icp.ICP;
 import icp.Point;
 
 import icp.ReferenceModel;
+import icp.RelativeICPProcessor;
 import icp.Transform;
 
 import lib.Loop;
@@ -57,7 +58,8 @@ public class LidarProcessor implements Loop {
     private LinkedList<LidarScan> mScans = new LinkedList<>();
     private double prev_timestamp;
 
-    private ICP icp = new ICP(ReferenceModel.TOWER, 100);
+    private ICP mICP = new ICP(100);
+    private RelativeICPProcessor mRelativeICP = new RelativeICPProcessor(mICP);
 
     private DataOutputStream dataLogFile;
 
@@ -202,23 +204,31 @@ public class LidarProcessor implements Loop {
         lock.readLock().lock();
         try {
             Pose2d guess = Main.getPose(getCurrentScan().getTimestamp());
-            Pose2d finalPose = icp.doICP(getCulledPoints(), new Transform(guess).inverse()).inverse().toPose2d();
-            return finalPose;
+            return mICP.doICP(getCulledPoints(), new Transform(guess).inverse(), ReferenceModel.TOWER).inverse().toPose2d();
         } finally {
             lock.readLock().unlock();
         }
     }
 
-    public Translation2d getTowerPosition() {
+    public Pose2d doRelativeICP() {
         lock.readLock().lock();
         try {
-            Point avg = getAveragePoint();
-            Transform trans = icp.doICP(getCulledPoints(), new Transform(0, avg.x, avg.y));
-            return trans.apply(icp.reference).getMidpoint().toTranslation2d();
+            return mRelativeICP.doRelativeICP(getCurrentScan().getPoints(), new Pose2d()).inverse().toPose2d();
         } finally {
             lock.readLock().unlock();
         }
     }
+
+    // public Translation2d getTowerPosition() {
+    //     lock.readLock().lock();
+    //     try {
+    //         Point avg = getAveragePoint();
+    //         Transform trans = icp.doICP(getCulledPoints(), new Transform(0, avg.x, avg.y), ReferenceModel.TOWER);
+    //         return trans.apply(icp.reference).getMidpoint().toTranslation2d();
+    //     } finally {
+    //         lock.readLock().unlock();
+    //     }
+    // }
 
     public void setPrevTimestamp(double time) {
         lock.writeLock().lock();

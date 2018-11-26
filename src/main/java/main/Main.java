@@ -35,7 +35,8 @@ public class Main
         while (true)
         {
             if (LidarServer.getInstance().isLidarConnected())
-                mPoses.put(new InterpolatingDouble(System.currentTimeMillis() / 1000d), mLidarProcessor.doICP());
+                Logger.debug(mLidarProcessor.doRelativeICP().toString());
+                // mPoses.put(new InterpolatingDouble(System.currentTimeMillis() / 1000d), mLidarProcessor.doICP());
         }
     }
 
