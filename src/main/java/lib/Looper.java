@@ -47,7 +47,7 @@ public class Looper
             {
                 if (running_)
                 {
-                    double now = System.currentTimeMillis() % 1000;
+                    double now = System.currentTimeMillis() / 1000d;
 
                     for (Loop loop : loops_)
                     {
@@ -82,17 +82,18 @@ public class Looper
             Logger.notice("Looper starting subsystem loops");
             synchronized (taskRunningLock_)
             {
-                timestamp_ = System.currentTimeMillis() % 1000;
+                timestamp_ = System.currentTimeMillis() / 1000d;
                 for (Loop loop : loops_)
                 {
                     loop.onStart(timestamp_);
                 }
                 running_ = true;
             }
+            scheduler_.shutdownNow();
             while (!scheduler_.isTerminated())
             {} // Woo possibly infinite loops
             scheduler_ = Executors.newScheduledThreadPool(1); // XXX: Who knows if this works
-            scheduler_.scheduleAtFixedRate(runnable_, 0 /* Initial delay of 0 ms */, (long) kPeriod, TimeUnit.MILLISECONDS);
+            scheduler_.scheduleAtFixedRate(runnable_, 0 /* Initial delay of 0 ms */, (long) (kPeriod * 1000), TimeUnit.MILLISECONDS);
         }
     }
 
@@ -105,7 +106,7 @@ public class Looper
             synchronized (taskRunningLock_)
             {
                 running_ = false;
-                timestamp_ = System.currentTimeMillis() % 1000;
+                timestamp_ = System.currentTimeMillis() / 1000d;
                 for (Loop loop : loops_)
                 {
                     Logger.notice("Looper stopping " + loop);

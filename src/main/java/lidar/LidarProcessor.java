@@ -21,7 +21,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.zip.GZIPOutputStream;
@@ -48,7 +52,7 @@ public class LidarProcessor implements Loop {
 
 
     //private RobotState mRobotState = RobotState.getInstance();
-    private LidarServer mLidarServer = LidarServer.getInstance();
+    private LidarServer mLidarServer;
 
     private LinkedList<LidarScan> mScans = new LinkedList<>();
     private double prev_timestamp;
@@ -108,7 +112,7 @@ public class LidarProcessor implements Loop {
         lock.writeLock().lock();
         try {
             if (newScan) { // crosses the 360-0 threshold. start a new scan
-                prev_timestamp = System.currentTimeMillis() % 1000;
+                prev_timestamp = System.currentTimeMillis() / 1000d;
 
                 // long start = System.nanoTime();
                 // Translation2d towerPos = getTowerPosition();
@@ -236,6 +240,13 @@ public class LidarProcessor implements Loop {
 
     @Override
     public void onStart(double timestamp) {
+        // Singletons are bad. We ended up with circular dependencies
+        // here because of them (if we do LidarServer.getInstance in
+        // the constructor we get a stack overflow). I'm going to just
+        // leave it like this for now, but I think we should refactor
+        // singletons out of (at least) the Lidar* classes for the
+        // actual robot code.
+        mLidarServer = LidarServer.getInstance();
         setPrevTimestamp(Double.NEGATIVE_INFINITY);
     }
 
