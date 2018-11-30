@@ -8,40 +8,70 @@ import lib.util.InterpolatingTreeMap;
 import lib.util.Logger;
 import lib.math.Pose2d;
 import lidar.LidarProcessor;
-import lidar.LidarServer;
 
 public class Main
 {
-    private static Looper mLooper;
-    private static LidarProcessor mLidarProcessor;
-    private static InterpolatingTreeMap<InterpolatingDouble, Pose2d> mPoses;
-    private static final int kObservationBufferSize = 100;
+    enum OperatingMode
+    {
+        kRelative,
+        kAbsolute
+    };
+    private static final int kPoseMapSize = 100;
+    private static InterpolatingTreeMap<InterpolatingDouble, Pose2d> sPoses =
+            new InterpolatingTreeMap<InterpolatingDouble, Pose2d>(kPoseMapSize);
+
     public static void main(String[] args)
     {
+        final OperatingMode mode = OperatingMode.kRelative;
+        Looper mLooper;
+        LidarProcessor mLidarProcessor;
         Logger.setVerbosity("DEBUG");
 
-        mPoses = new InterpolatingTreeMap<InterpolatingDouble, Pose2d>(kObservationBufferSize);
-        mPoses.put(new InterpolatingDouble(0.0), new Pose2d());
-
         mLooper = new Looper();
-        Logger.debug("LIDAR starting...");
-        mLidarProcessor = LidarProcessor.getInstance();
+        mLidarProcessor = new LidarProcessor();
         mLooper.register(mLidarProcessor);
-        boolean started = LidarServer.getInstance().start();
-        Logger.debug("LIDAR status " + (started ? "started" : "failed to start"));
+        boolean started = mLidarProcessor.isConnected();
+        if(!started)
+            return;
 
+        double ts = System.currentTimeMillis() / 1000d;
+        Pose2d zeroPose = new Pose2d();
+        sPoses.put(new InterpolatingDouble(ts), zeroPose);
         mLooper.start();
-
         while (true)
         {
-            if (LidarServer.getInstance().isLidarConnected())
-                Logger.debug(mLidarProcessor.doRelativeICP().toString());
-                // mPoses.put(new InterpolatingDouble(System.currentTimeMillis() / 1000d), mLidarProcessor.doICP());
+            if (mLidarProcessor.isConnected())
+            {
+                try
+                {
+                    Pose2d p;
+                    if(mode == OperatingMode.kRelative)
+                    {
+                        p = mLidarProcessor.doRelativeICP();
+                        Logger.debug("relativeICP: " + p.toString());
+                    } 
+                    else
+                    {
+                        p = mLidarProcessor.doICP();
+                        Logger.debug("absoluteICP: " + p.toString());
+                    }
+                    ts = System.currentTimeMillis() / 1000d;
+                    // until robot is actually moving, we don't want
+                    // to update robot pose. That is, we expect the
+                    // "same" point cloud each iteration.
+                    sPoses.put(new InterpolatingDouble(ts), zeroPose);
+                    Thread.sleep(200); // 100 milliseconds -> 5hz (~LidarRate)
+                }
+                catch(Exception e)
+                {
+                    Logger.exception(e);
+                }
+            }
         }
     }
 
-    public static Pose2d getPose(double timestamp)
+    public static Pose2d getRobotPose(double timestamp)
     {
-        return mPoses.get(new InterpolatingDouble(timestamp));
+        return sPoses.get(new InterpolatingDouble(timestamp));
     }
 }

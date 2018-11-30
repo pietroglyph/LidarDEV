@@ -15,7 +15,6 @@ import java.util.UUID;
  */
 public class Logger
 {
-
     private static final UUID RUN_INSTANCE_UUID = UUID.randomUUID();
     public static int sVerbosity = 0; // 0: notices and above,  1: info and above, 2: all
     private static final DateFormat s_dateFormat = new SimpleDateFormat("hh:mm:ss"); 
@@ -66,34 +65,40 @@ public class Logger
 
     public static void logThrowableCrash(Throwable throwable)
     {
-        logMarker("Exception", throwable);
+        logMarker("Exception", throwable, true);
     }
 
     public static void logThrowableCrash(String msg, Throwable throwable)
     {
-        logMarker("ERROR " + msg, throwable);
+        logMarker("ERROR   " + msg, throwable, true);
     }
     
+    public static void exception(Exception e)
+    {
+        logMarker("EXCEPT  " + e.getMessage() + 
+                " trace:\n" +  e.getStackTrace(), true);
+    }
+
     public static void error(String m)
     {
-        logMarker("ERROR   " + m);
+        logMarker("ERROR   " + m, true);
     }
 
     public static void warning(String m)
     {
-        logMarker("WARNING " + m);
+        logMarker("WARNING " + m, true);
     }
 
     public static void notice(String m)
     {
-        logMarker("NOTICE  " + m);
+        logMarker("NOTICE   " + m, false);
     }
 
     public static void info(String m)
     {
         if (sVerbosity > 0)
         {
-            printMarker("INFO    " + m);
+            printMarker("INFO    " + m, false);
         }
     }
 
@@ -101,7 +106,7 @@ public class Logger
     {
         if (sVerbosity > 1)
         {
-            printMarker("DEBUG    " + m);
+            printMarker("DEBUG   " + m, false);
         }
     }
     
@@ -112,22 +117,26 @@ public class Logger
         return nowstr;
     }
 
-    private static void logMarker(String mark)
+    private static void logMarker(String mark, boolean asError)
     {
-        logMarker(mark, null);
+        logMarker(mark, null,  asError);
     }
 
-    private static void printMarker(String mark)
+    private static void printMarker(String mark, boolean asError)
     {
-        System.out.println(mark);
+        if(asError)
+            System.err.println(mark);
+        else
+            System.out.println(mark);
     }
 
-    private static void logMarker(String mark, Throwable nullableException)
+    private static void logMarker(String mark, Throwable nullableException, 
+                                 boolean asError)
     {
-        printMarker(mark);
+        printMarker(mark, asError);
         if(nullableException != null)
             nullableException.printStackTrace();
-            try (PrintWriter writer = new PrintWriter(new FileWriter(Paths.get(System.getProperty("user.home"), "crash_tracking.txt").toString(), true)))
+        try (PrintWriter writer = new PrintWriter(new FileWriter(Paths.get(System.getProperty("user.home"), "crash_tracking.txt").toString(), true)))
         {
             writer.print(RUN_INSTANCE_UUID.toString());
             writer.print(", ");

@@ -43,8 +43,15 @@ public class RelativeICPProcessor
      */
     public Transform doRelativeICP(Iterable<Point> pointCloud, Pose2d vehicleToLidar)
     {
-        Transform t = mLastReferenceModel == null ? new Transform()
-                : mICP.doICP(pointCloud, new Transform(mLastTransform.toPose2d().transformBy(vehicleToLidar)), mLastReferenceModel);
+        Transform t;
+        if(mLastReferenceModel == null)
+            t = new Transform();
+        else
+        {
+            t = mICP.doICP(pointCloud, 
+                    new Transform(mLastTransform.toPose2d().transformBy(vehicleToLidar)), 
+                    mLastReferenceModel);
+        }
         mLastTransform = t;
         mLastReferenceModel = new PointCloudReferenceModel(pointCloud);
         return t;
@@ -63,10 +70,16 @@ public class RelativeICPProcessor
      */
     public Transform doRelativeICP(Iterable<Point> pointCloud, Transform guess)
     {
-        Transform t = mLastReferenceModel == null ? new Transform() : mICP.doICP(pointCloud, guess, mLastReferenceModel);
-        Transform newTransform = new Transform(mLastTransform.toPose2d().transformBy(t.toPose2d()));
-        mLastTransform = t;
-        mLastReferenceModel = new PointCloudReferenceModel(pointCloud); // Store this just for completeness
-        return newTransform;
+        Transform t1, t2=null;
+        if(mLastReferenceModel == null)
+            t1 = new Transform(); 
+        else
+        {
+            t1 = mICP.doICP(pointCloud, guess, mLastReferenceModel);
+            t2 = new Transform(mLastTransform.toPose2d().transformBy(t1.toPose2d()));
+        }
+        mLastTransform = t1;
+        mLastReferenceModel = new PointCloudReferenceModel(pointCloud); 
+        return t2;
     }
 }
