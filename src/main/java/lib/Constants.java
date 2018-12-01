@@ -54,7 +54,8 @@ public class Constants //extends ConstantsBase
     // Analog In Pins
 
     // Software configuration constants
-    public static final double kLooperDt = 0.005;
+    public static final int kLooperDtMS = 5; //
+    public static final double kLooperDt = kLooperDtMS / 1000.0;
     
     // Vision
     public static final int kAndroidAppTcpPort = 8254;

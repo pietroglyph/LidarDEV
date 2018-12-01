@@ -27,7 +27,7 @@ import lib.util.Logger;
 public class Looper
 {
 
-    public final double kPeriod = Constants.kLooperDt;
+    public final double kPeriodMS = Constants.kLooperDtMS;
 
     private boolean running_;
 
@@ -93,7 +93,10 @@ public class Looper
             while (!scheduler_.isTerminated())
             {} // Woo possibly infinite loops
             scheduler_ = Executors.newScheduledThreadPool(1); // XXX: Who knows if this works
-            scheduler_.scheduleAtFixedRate(runnable_, 0 /* Initial delay of 0 ms */, (long) (kPeriod * 1000), TimeUnit.MILLISECONDS);
+            scheduler_.scheduleAtFixedRate(runnable_, 
+                            0 /* Initial delay of 0 ms */, 
+                            (long) kPeriodMS, 
+                            TimeUnit.MILLISECONDS);
         }
     }
 
