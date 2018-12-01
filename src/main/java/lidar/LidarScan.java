@@ -7,24 +7,25 @@ import lib.util.Logger;
 import java.util.ArrayList;
 
 /**
- * Holds a single 360 degree scan from the lidar
+ * Holds a single 360 degree scan from the lidar.  The timestamp
+ * for the scan is that of the first point.
  */
 class LidarScan 
 {
-    private ArrayList<Point> points = new ArrayList<>(Constants.kLidarScanSize);
-    private double timestamp = 0;
-    private static int s_scan = 0;
+    private ArrayList<Point> mPoints = new ArrayList<>(Constants.kLidarScanSize);
+    private double mTimestamp = 0;
+    private static int sScanCount = 0;
 
     public LidarScan()
     {
-        // Logger.debug("new scan " + s_scan);
-        s_scan++;
+        // Logger.debug("new scan " + sScanCount);
+        sScanCount++;
     }
 
     public String toJsonString() 
     {
-        String json = "{\"timestamp\": " + timestamp + ", \"scan\": [";
-        for (Point point : points)
+        String json = "{\"timestamp\": " + mTimestamp + ", \"scan\": [";
+        for (Point point : mPoints)
         {
             json += "{\"x\":" + point.x + ", \"y\":" + point.y + "},";
         }
@@ -36,7 +37,7 @@ class LidarScan
     public String toString()
     {
         String s = "";
-        for (Point point : points) 
+        for (Point point : mPoints) 
         {
             s += "x: " + point.x + ", y: " + point.y + "\n";
         }
@@ -45,18 +46,18 @@ class LidarScan
 
     public ArrayList<Point> getPoints()
     {
-        return points;
+        return mPoints;
     }
 
     public double getTimestamp()
     {
-        return timestamp;
+        return mTimestamp;
     }
 
     public void addPoint(Point point, double time)
     {
-        if (timestamp == 0)
-            timestamp = time;
-        points.add(point);
+        if (mTimestamp == 0)
+            mTimestamp = time;
+        mPoints.add(point);
     }
 }

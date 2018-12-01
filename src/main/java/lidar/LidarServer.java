@@ -146,14 +146,12 @@ public class LidarServer
 
     private void handleLine(String line) 
     {
-        // NB: this method is invoked in runs in the ReaderThread.
-        //   
+        // NB: this method is invoked in the ReaderThread.
         boolean isNewScan = line.substring(line.length() - 1).equals("s");
         if (isNewScan)
         {
             line = line.substring(0, line.length() - 1);
         }
-
         String[] parts = line.split(",");
         if (parts.length == 3)
         {
