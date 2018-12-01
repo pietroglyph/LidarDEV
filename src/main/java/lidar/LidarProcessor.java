@@ -54,6 +54,8 @@ public class LidarProcessor implements Loop
     private boolean mDebugPoints=true;
     private LidarServer mLidarServer;
     private double mScanTime;
+    private double mLastScanTime;
+    private double mScanTimeAccum;
     private int mScanCount;
     private ICP mICP; 
     private RelativeICPProcessor mRelativeICP; 
@@ -72,6 +74,8 @@ public class LidarProcessor implements Loop
         mRWLock = new ReentrantReadWriteLock();
         mLidarServer = new LidarServer(this);
         mScanTime = Double.NEGATIVE_INFINITY;
+        mLastScanTime = Double.NEGATIVE_INFINITY;
+        mScanTimeAccum = 0;
         mScanCount = 0;
         mActiveScan = null;
         try 
@@ -101,7 +105,7 @@ public class LidarProcessor implements Loop
     public void onLoop(double timestamp) 
     {
         // we're called regularly (100hz) from the looper. 
-        if (timestamp - getLastScanTime() > Constants.kLidarRestartTime) 
+        if (timestamp - getScanStart() > Constants.kLidarRestartTime) 
         {
             if (!mLidarServer.isEnding() && !mLidarServer.isRunning()) 
             {
@@ -118,13 +122,19 @@ public class LidarProcessor implements Loop
             try
             {
                 LidarScan scan = mScanQueue.take(); // blocks
-                if(mScanCount%10 == 0)
+                double scanTime = scan.getTimestamp();
+                if(mScanCount > 0)
+                    mScanTimeAccum += scanTime - mLastScanTime;
+                if(mScanCount%10 == 1)
                 {
+                    double scansPerSec = mScanCount/mScanTimeAccum;
+                    // we might want to log this to SmartDashboard
                     Logger.notice("scan " + mScanCount + 
                                   " npts:" + scan.getPoints().size() +
-                                  " ts:" + scan.getTimestamp());
+                                  " scansPerSec:"+ scansPerSec);
                 }
                 mScanCount++;
+                mLastScanTime = scanTime;
                 this.processLidarScan(scan);
             }
             catch(InterruptedException ie)
@@ -302,7 +312,7 @@ public class LidarProcessor implements Loop
         }
     }
 
-    public double getLastScanTime() 
+    public double getScanStart() 
     {
         mRWLock.readLock().lock();
         try 
