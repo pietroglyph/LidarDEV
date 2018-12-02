@@ -11,18 +11,12 @@ import lidar.LidarProcessor;
 
 public class Main
 {
-    enum OperatingMode
-    {
-        kRelative,
-        kAbsolute
-    };
     private static final int kPoseMapSize = 100;
     private static InterpolatingTreeMap<InterpolatingDouble, Pose2d> sPoses =
             new InterpolatingTreeMap<InterpolatingDouble, Pose2d>(kPoseMapSize);
 
     public static void main(String[] args)
     {
-        final OperatingMode mode = OperatingMode.kRelative;
         Looper mLooper;
         LidarProcessor mLidarProcessor;
         Logger.setVerbosity("DEBUG");
@@ -34,38 +28,20 @@ public class Main
         if(!started)
             return;
 
-        double ts = System.currentTimeMillis() / 1000d;
         Pose2d zeroPose = new Pose2d();
+        double ts = System.currentTimeMillis() / 1000d;
         sPoses.put(new InterpolatingDouble(ts), zeroPose);
         mLooper.start();
         while (true)
         {
-            if (mLidarProcessor.isConnected())
+            try
             {
-                try
-                {
-                    Pose2d p;
-                    if(mode == OperatingMode.kRelative)
-                    {
-                        p = mLidarProcessor.doRelativeICP();
-                        Logger.debug("relativeICP: " + p.toString());
-                    } 
-                    else
-                    {
-                        p = mLidarProcessor.doICP();
-                        Logger.debug("absoluteICP: " + p.toString());
-                    }
-                    ts = System.currentTimeMillis() / 1000d;
-                    // until robot is actually moving, we don't want
-                    // to update robot pose. That is, we expect the
-                    // "same" point cloud each iteration.
-                    sPoses.put(new InterpolatingDouble(ts), zeroPose);
-                    Thread.sleep(200); // 100 milliseconds -> 5hz (~LidarRate)
-                }
-                catch(Exception e)
-                {
-                    Logger.exception(e);
-                }
+                // Lidar Processing occurs in LidarProcessor
+                Thread.sleep(200);
+            }
+            catch(Exception e)
+            {
+                Logger.exception(e);
             }
         }
     }

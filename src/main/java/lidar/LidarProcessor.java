@@ -30,7 +30,10 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.zip.GZIPOutputStream;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Receives LIDAR points from the {@link LidarServer}, stores a set number of
@@ -44,30 +47,69 @@ import java.util.zip.GZIPOutputStream;
  */
 public class LidarProcessor implements Loop 
 {
+    enum OperatingMode
+    {
+        kRelative,
+        kAbsolute
+    };
+
+    private static boolean sDebugPoints=false;
     private LidarServer mLidarServer;
-    private boolean mDebugPoints=true;
-
-    private LinkedList<LidarScan> mScans = new LinkedList<>();
-    private double prev_timestamp;
-
-    private ICP mICP = new ICP(100);
-    private RelativeICPProcessor mRelativeICP = new RelativeICPProcessor(mICP);
-
+    private double mScanTime;
+    private double mLastScanTime;
+    private double mScanTimeAccum;
+    private int mScanCount;
+    private ICP mICP; 
+    private RelativeICPProcessor mRelativeICP; 
     private DataOutputStream mDataLogFile;
+    private final ReadWriteLock mRWLock; 
+    private LinkedBlockingQueue<LidarScan> mScanQueue;
+    private LidarScan mActiveScan;
+    private final OperatingMode mMode = OperatingMode.kRelative;
 
-    private final ReadWriteLock mRWLock = new ReentrantReadWriteLock();
+    // A scan is a collection of lidar points.  The scan, itself,
+    // has a timestamp as does each point.  Currently, the timestamp
+    // of each point is the same as scan, but this needn't be the case
+    // since a full scan requires 1/(5-10hz) seconds. The robot pose
+    // is tracked by the application/main and the position of the robot
+    // time a point is acquired by interpolating known robot poses to
+    // the requested time.  Since this operation is non-trivial and since
+    // we assume that multiple LidarPoints are acquired at the "same time",
+    // we employ a local cache that maps timestamp to robot pose.  This
+    // cache is a "class variable" - ie it's shared across all points.
+    private final static int MAX_ENTRIES = 10;
+    private final static LinkedHashMap<Double, Pose2d> sRobotPoseMap = 
+        new LinkedHashMap<Double, Pose2d>() 
+    {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Double,Pose2d> eldest)
+        {
+            return this.size() > MAX_ENTRIES;
+        }
+    };
 
     public LidarProcessor() 
     {
-        Logger.debug("LIDAR starting...");
+        Logger.debug("LidarProcessor starting...");
+        mICP = new ICP(100);
+        mScanQueue = new LinkedBlockingQueue<LidarScan>();
+        mRelativeICP = new RelativeICPProcessor(mICP);
+        mRWLock = new ReentrantReadWriteLock();
         mLidarServer = new LidarServer(this);
-        mScans.add(new LidarScan());
+        mScanTime = Double.NEGATIVE_INFINITY;
+        mLastScanTime = Double.NEGATIVE_INFINITY;
+        mScanTimeAccum = 0;
+        mScanCount = 0;
+        mActiveScan = null;
         try 
         {
-            if(mDebugPoints)
+            if(sDebugPoints)
+            {
                 mDataLogFile = new DataOutputStream(newLogFile());
-            else
-                mDataLogFile = new DataOutputStream(new GZIPOutputStream(newLogFile()));
+                // mDataLogFile = new DataOutputStream(new GZIPOutputStream(newLogFile()));
+            }
         } 
         catch (IOException e) 
         {
@@ -78,6 +120,93 @@ public class LidarProcessor implements Loop
     public boolean isConnected()
     {
         return mLidarServer.isLidarConnected();
+    }
+
+    @Override
+    public void onStart(double timestamp) 
+    {
+    }
+
+    @Override
+    public void onLoop(double timestamp) 
+    {
+        // we're called regularly (100hz) from the looper. 
+        if (timestamp - getScanStart() > Constants.kLidarRestartTime) 
+        {
+            if (!mLidarServer.isEnding() && !mLidarServer.isRunning()) 
+            {
+                if(!mLidarServer.start())   
+                {
+                    // If server fails to start we update mScanTime to 
+                    // ensure we don't restart each loop.
+                    startNewScan(timestamp);
+                }
+            }
+        }
+        if(mLidarServer.isRunning())
+        {
+            try
+            {
+                LidarScan scan = mScanQueue.take(); // consumer blocks
+                double scanTime = scan.getTimestamp();
+                if(mScanCount > 0)
+                    mScanTimeAccum += scanTime - mLastScanTime;
+                if(mScanCount%10 == 1)
+                {
+                    double scansPerSec = mScanCount/mScanTimeAccum;
+                    // we might want to log this to SmartDashboard
+                    Logger.notice("scan " + mScanCount + 
+                                  " npts:" + scan.getPoints().size() +
+                                  " scansPerSec:"+ scansPerSec);
+                }
+                mScanCount++;
+                mLastScanTime = scanTime;
+                this.processLidarScan(scan);
+            }
+            catch(InterruptedException ie)
+            {
+            }
+        }
+    }
+
+    @Override
+    public void onStop(double timestamp)
+    {
+        mLidarServer.stop();
+    }
+
+    private void processLidarScan(LidarScan scan)
+    {
+        try
+        {
+            Pose2d p;
+            if(mMode == OperatingMode.kRelative)
+            {
+                Transform xform = mRelativeICP.doRelativeICP(scan.getPoints());
+                if(xform != null)
+                {
+                    p  = xform.inverse().toPose2d();
+                    Logger.debug("relativeICP: " + p.toString());
+                }
+            } 
+            else
+            {
+                Pose2d guess = Main.getRobotPose(scan.getTimestamp());
+                Transform xform = mICP.doICP(getCulledPoints(scan), 
+                                new Transform(guess).inverse(), 
+                                ReferenceModel.TOWER);
+                p  = xform.inverse().toPose2d();
+                Logger.debug("absoluteICP: " + p.toString());
+            }
+            // until robot is actually moving, we don't want
+            // to update robot pose. That is, we expect the
+            // "same" point cloud each iteration.
+            // sPoses.put(new InterpolatingDouble(ts), zeroPose);
+        }
+        catch(Exception e)
+        {
+            Logger.exception(e);
+        }
     }
 
     private static FileOutputStream newLogFile() throws IOException 
@@ -102,14 +231,18 @@ public class LidarProcessor implements Loop
         return new FileOutputStream(newFile, false);
     }
 
+    // logPoint is invoked from 
     private void logPoint(double angle, double dist, double x, double y)
     {
         try 
         {
-            mDataLogFile.writeInt((int) (angle * 100));
-            mDataLogFile.writeInt((int) (dist * 256));
-            mDataLogFile.writeInt((int) (x * 256));
-            mDataLogFile.writeInt((int) (y * 256));
+            if(mDataLogFile != null)
+            {
+                mDataLogFile.writeInt((int) (angle * 100));
+                mDataLogFile.writeInt((int) (dist * 256));
+                mDataLogFile.writeInt((int) (x * 256));
+                mDataLogFile.writeInt((int) (y * 256));
+            }
         } 
         catch (IOException e)
         {
@@ -126,42 +259,36 @@ public class LidarProcessor implements Loop
     public void addPoint(double ts, double angle, double dist, 
                                       boolean newScan) 
     {
-        LidarPoint lpt = new LidarPoint(ts, angle, dist);
-        Translation2d cartesian = lpt.toCartesian();
-        logPoint(lpt.angle, lpt.distance, cartesian.x(), cartesian.y());
 
-        mRWLock.writeLock().lock();
-        try 
+        // transform by the robot's pose
+        Pose2d robotPose = null;
+        if(this.mMode == OperatingMode.kAbsolute)
         {
-            if (newScan) // crosses the 360-0 threshold. start a new scan
-            { 
-                prev_timestamp = System.currentTimeMillis() / 1000d;
-
-                // long start = System.nanoTime();
-                // Translation2d towerPos = getTowerPosition();
-                // long end = System.nanoTime();
-                // SmartDashboard.putNumber("towerPos_ms", (end-start)/1000000);
-                // SmartDashboard.putNumber("towerPosX", towerPos.x());
-                // SmartDashboard.putNumber("towerPosY", towerPos.y());
-
-                mScans.add(new LidarScan());
-                if (mScans.size() > Constants.kLidarNumScansToStore) 
-                {
-                    mScans.removeFirst();
-                }
-            }
-
-            if (!excludePoint(cartesian.x(), cartesian.y())) 
+            if (sRobotPoseMap.containsKey(ts)) 
             {
-                getCurrentScan().addPoint(new Point(cartesian), lpt.timestamp);
-
-                // The point cloud output is relative to the robot's position, so it probably
-                // won't look to good if you move the robot around.
+                robotPose = sRobotPoseMap.get(ts);
+            } 
+            else
+            {
+                robotPose = Main.getRobotPose(ts);
+                if(robotPose != null)
+                    sRobotPoseMap.put(ts, robotPose);
             }
         }
-        finally 
+        LidarPoint lpt = new LidarPoint(ts, angle, dist); 
+        Translation2d cartesian = lpt.toCartesian(robotPose);
+        logPoint(lpt.angle, lpt.distance, cartesian.x(), cartesian.y());
+        if (newScan || mActiveScan == null) 
+        { 
+            if(mActiveScan != null)
+                mScanQueue.add(mActiveScan); // <- send it to consumer
+
+            mActiveScan  = new LidarScan();
+            startNewScan(System.currentTimeMillis() / 1000d);
+        }
+        if (!excludePoint(cartesian.x(), cartesian.y())) 
         {
-            mRWLock.writeLock().unlock();
+            mActiveScan.addPoint(new Point(cartesian), lpt.timestamp);
         }
     }
 
@@ -177,37 +304,11 @@ public class LidarProcessor implements Loop
         // return x < RECT_X_MIN || x > RECT_X_MAX || y < RECT_Y_MIN || y > RECT_Y_MAX;
     }
 
-    private LidarScan getCurrentScan() 
-    {
-        return mScans.getLast();
-    }
-
-    private ArrayList<Point> getAllPoints() 
-    {
-        ArrayList<Point> list = new ArrayList<>();
-        for (LidarScan scan : mScans) 
-        {
-            list.addAll(scan.getPoints());
-        }
-        return list;
-    }
-
-    private Point getAveragePoint()
-    {
-        double sumX = 0, sumY = 0;
-        int n = 0;
-        for (Point p : getAllPoints()) {
-            sumX += p.x;
-            sumY += p.y;
-            n++;
-        }
-        return new Point(sumX / n, sumY / n);
-    }
-
     private static final double BUCKET_SIZE = 3.0; // inches
 
     /**
      * Cantor pairing function (to bucket & hash two doubles)
+     * converts two integers into one; used as a hash key
      */
     private int getBucket(double x, double y)
     {
@@ -222,67 +323,24 @@ public class LidarProcessor implements Loop
     /**
      * Returns a list of points that have been thinned roughly uniformly.
      */
-    private ArrayList<Point> getCulledPoints()
+    private ArrayList<Point> getCulledPoints(LidarScan scan)
     {
         ArrayList<Point> list = new ArrayList<>();
         HashSet<Integer> buckets = new HashSet<>();
-        for (Point p : getAllPoints()) {
+        for (Point p : scan.getPoints())
+        {
             if (buckets.add(getBucket(p.x, p.y)))
                 list.add(p);
         }
         return list;
     }
 
-    public Pose2d doICP()
-    {
-        mRWLock.readLock().lock(); // holds lock on all addPoint 
-        try
-        {
-            Pose2d guess = Main.getRobotPose(getCurrentScan().getTimestamp());
-            Transform xform = mICP.doICP(getCulledPoints(), 
-                                new Transform(guess).inverse(), 
-                                ReferenceModel.TOWER);
-            return xform.inverse().toPose2d();
-        }
-        finally 
-        {
-            mRWLock.readLock().unlock();
-        }
-    }
-
-    public Pose2d doRelativeICP() 
-    {
-        mRWLock.readLock().lock(); // holds lock on all addPoint 
-        try 
-        {
-            Transform xform = mRelativeICP.doRelativeICP(
-                                    getCurrentScan().getPoints(), 
-                                    new Pose2d()/*vehicleToLidar*/ );
-            return xform.inverse().toPose2d();
-        } 
-        finally 
-        {
-            mRWLock.readLock().unlock();
-        }
-    }
-
-    // public Translation2d getTowerPosition() {
-    //     lock.readLock().lock();
-    //     try {
-    //         Point avg = getAveragePoint();
-    //         Transform trans = icp.doICP(getCulledPoints(), new Transform(0, avg.x, avg.y), ReferenceModel.TOWER);
-    //         return trans.apply(icp.reference).getMidpoint().toTranslation2d();
-    //     } finally {
-    //         lock.readLock().unlock();
-    //     }
-    // }
-
-    public void setPrevTimestamp(double time) 
+    public void startNewScan(double time) 
     {
         mRWLock.writeLock().lock();
         try 
         {
-            prev_timestamp = time;
+            mScanTime = time;
         } 
         finally 
         {
@@ -290,12 +348,12 @@ public class LidarProcessor implements Loop
         }
     }
 
-    public double getPrevTimestamp() 
+    public double getScanStart() 
     {
         mRWLock.readLock().lock();
         try 
         {
-            return prev_timestamp;
+            return mScanTime;
         } 
         finally 
         {
@@ -303,39 +361,4 @@ public class LidarProcessor implements Loop
         }
     }
 
-    @Override
-    public void onStart(double timestamp) 
-    {
-        // Singletons are bad. We ended up with circular dependencies
-        // here because of them (if we do LidarServer.getInstance in
-        // the constructor we get a stack overflow). I'm going to just
-        // leave it like this for now, but I think we should refactor
-        // singletons out of (at least) the Lidar* classes for the
-        // actual robot code.
-        setPrevTimestamp(Double.NEGATIVE_INFINITY);
-    }
-
-    @Override
-    public void onLoop(double timestamp) 
-    {
-        // we're called regularly from  the looper, since we have
-        // a subthread for reading the lidar, we do nother here except
-        // ensure that the subprocess hasn't died.
-        if (timestamp - getPrevTimestamp() > Constants.kLidarRestartTime) 
-        {
-            if (!mLidarServer.isEnding() && !mLidarServer.isRunning()) 
-            {
-                if (mLidarServer.start()) 
-                {
-                    setPrevTimestamp(timestamp);
-                } 
-            }
-        }
-    }
-
-    @Override
-    public void onStop(double timestamp)
-    {
-        mLidarServer.stop();
-    }
 }
