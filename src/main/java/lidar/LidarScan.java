@@ -14,12 +14,9 @@ class LidarScan
 {
     private ArrayList<Point> mPoints = new ArrayList<>(Constants.kLidarScanSize);
     private double mTimestamp = 0;
-    private static int sScanCount = 0;
 
     public LidarScan()
     {
-        // Logger.debug("new scan " + sScanCount);
-        sScanCount++;
     }
 
     public String toJsonString() 

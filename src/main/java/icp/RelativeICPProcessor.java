@@ -6,9 +6,8 @@ public class RelativeICPProcessor
 {
 
     private final ICP mICP;
-
+    private final Transform mZero;
     private IReferenceModel mLastReferenceModel;
-    private Transform mLastTransform;
 
     /**
      * Instantiate a RelativeICPProcessor and have it make its own ICP object. You
@@ -18,7 +17,7 @@ public class RelativeICPProcessor
      */
     public RelativeICPProcessor(long icpTimeoutMs)
     {
-        mICP = new ICP(icpTimeoutMs);
+        this(new ICP(icpTimeoutMs));
     }
 
     /**
@@ -30,46 +29,27 @@ public class RelativeICPProcessor
     public RelativeICPProcessor(ICP icp)
     {
         mICP = icp;
+        mZero = new Transform();
     }
 
     /**
      * Applies ICP point registration, using the last provided point cloud as a
-     * reference field. Assumes (and will return) that the robot is at 0, 0 on the
-     * first call to this method.
+     * reference. Returns a Transform that can be used to register the old
+     * point cloud to the new one. This is a representation of the relative
+     * motion of the robot. Since we never convert to field coordinates, we 
+     * don't care about absolute robot pose or even vehicleToLidar
      * 
      * @param pointCloud
-     * @param vehicleToLidar Pose2d that represents the vehicle to lidar transform
-     * @return The robot's transform
+     * @return The relative transform to transform first pointcloud to second.
      */
-    public Transform doRelativeICP(Iterable<Point> pointCloud, Pose2d vehicleToLidar)
+    public Transform doRelativeICP(Iterable<Point> pointCloud)
     {
-        return this.doRelativeICP(pointCloud,
-            new Transform(mLastTransform.toPose2d().transformBy(vehicleToLidar)));
-    }
-
-    /**
-     * Applies ICP point registration, using the last provided point cloud as a
-     * reference field, and a caller-provided guess (e.g. from odometry) instead of
-     * using the last computed transform as a guess. Assumes (and will return) that
-     * the robot is at 0, 0 on the first call.
-     * 
-     * @param pointCloud
-     * @param guess      Caller-provided guess. Could be from odometry, but must be
-     *                   in lidar coordinates.
-     * @return The robot's transform
-     */
-    public Transform doRelativeICP(Iterable<Point> pointCloud, Transform guess)
-    {
-        Transform t1, t2=null;
-        if(mLastReferenceModel == null)
-            t1 = new Transform(); 
+        Transform result;
+        if(mLastReferenceModel != null)
+            result = mICP.doICP(pointCloud, mZero, mLastReferenceModel);
         else
-        {
-            t1 = mICP.doICP(pointCloud, guess, mLastReferenceModel);
-            t2 = new Transform(mLastTransform.toPose2d().transformBy(t1.toPose2d()));
-        }
-        mLastTransform = t1;
+            result = new Transform(); // ie no-tranform
         mLastReferenceModel = new PointCloudReferenceModel(pointCloud); 
-        return t2;
+        return result;
     }
 }

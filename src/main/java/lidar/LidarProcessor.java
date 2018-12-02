@@ -32,6 +32,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.zip.GZIPOutputStream;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Receives LIDAR points from the {@link LidarServer}, stores a set number of
@@ -51,7 +53,7 @@ public class LidarProcessor implements Loop
         kAbsolute
     };
 
-    private boolean mDebugPoints=true;
+    private static boolean sDebugPoints=false;
     private LidarServer mLidarServer;
     private double mScanTime;
     private double mLastScanTime;
@@ -63,7 +65,31 @@ public class LidarProcessor implements Loop
     private final ReadWriteLock mRWLock; 
     private LinkedBlockingQueue<LidarScan> mScanQueue;
     private LidarScan mActiveScan;
-    private final OperatingMode mode = OperatingMode.kRelative;
+    private final OperatingMode mMode = OperatingMode.kRelative;
+
+    // A scan is a collection of lidar points.  The scan, itself,
+    // has a timestamp as does each point.  Currently, the timestamp
+    // of each point is the same as scan, but this needn't be the case
+    // since a full scan requires 1/(5-10hz) seconds. The robot pose
+    // is tracked by the application/main and the position of the robot
+    // time a point is acquired by interpolating known robot poses to
+    // the requested time.  Since this operation is non-trivial and since
+    // we assume that multiple LidarPoints are acquired at the "same time",
+    // we employ a local cache that maps timestamp to robot pose.  This
+    // cache is a "class variable" - ie it's shared across all points.
+    private final static int MAX_ENTRIES = 10;
+    private final static LinkedHashMap<Double, Pose2d> sRobotPoseMap = 
+        new LinkedHashMap<Double, Pose2d>() 
+    {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Double,Pose2d> eldest)
+        {
+            return this.size() > MAX_ENTRIES;
+        }
+    };
+
 
     public LidarProcessor() 
     {
@@ -80,10 +106,11 @@ public class LidarProcessor implements Loop
         mActiveScan = null;
         try 
         {
-            if(mDebugPoints)
+            if(sDebugPoints)
+            {
                 mDataLogFile = new DataOutputStream(newLogFile());
-            else
-                mDataLogFile = new DataOutputStream(new GZIPOutputStream(newLogFile()));
+                // mDataLogFile = new DataOutputStream(new GZIPOutputStream(newLogFile()));
+            }
         } 
         catch (IOException e) 
         {
@@ -121,7 +148,7 @@ public class LidarProcessor implements Loop
         {
             try
             {
-                LidarScan scan = mScanQueue.take(); // blocks
+                LidarScan scan = mScanQueue.take(); // consumer blocks
                 double scanTime = scan.getTimestamp();
                 if(mScanCount > 0)
                     mScanTimeAccum += scanTime - mLastScanTime;
@@ -154,14 +181,22 @@ public class LidarProcessor implements Loop
         try
         {
             Pose2d p;
-            if(mode == OperatingMode.kRelative)
+            if(mMode == OperatingMode.kRelative)
             {
-                p = this.doRelativeICP(scan);
-                // Logger.debug("relativeICP: " + p.toString());
+                Transform xform = mRelativeICP.doRelativeICP(scan.getPoints());
+                if(xform != null)
+                {
+                    p  = xform.inverse().toPose2d();
+                    Logger.debug("relativeICP: " + p.toString());
+                }
             } 
             else
             {
-                p = this.doICP(scan);
+                Pose2d guess = Main.getRobotPose(scan.getTimestamp());
+                Transform xform = mICP.doICP(getCulledPoints(scan), 
+                                new Transform(guess).inverse(), 
+                                ReferenceModel.TOWER);
+                p  = xform.inverse().toPose2d();
                 Logger.debug("absoluteICP: " + p.toString());
             }
             // until robot is actually moving, we don't want
@@ -173,23 +208,6 @@ public class LidarProcessor implements Loop
         {
             Logger.exception(e);
         }
-    }
-
-    private Pose2d doICP(LidarScan scan)
-    {
-        Pose2d guess = Main.getRobotPose(scan.getTimestamp());
-        Transform xform = mICP.doICP(getCulledPoints(scan), 
-                                new Transform(guess).inverse(), 
-                                ReferenceModel.TOWER);
-        return xform.inverse().toPose2d();
-    }
-
-    private Pose2d doRelativeICP(LidarScan scan) 
-    {
-        Transform xform = mRelativeICP.doRelativeICP(
-                                    scan.getPoints(), 
-                                    new Pose2d()/*vehicleToLidar TBD*/ );
-        return xform.inverse().toPose2d();
     }
 
     private static FileOutputStream newLogFile() throws IOException 
@@ -219,10 +237,13 @@ public class LidarProcessor implements Loop
     {
         try 
         {
-            mDataLogFile.writeInt((int) (angle * 100));
-            mDataLogFile.writeInt((int) (dist * 256));
-            mDataLogFile.writeInt((int) (x * 256));
-            mDataLogFile.writeInt((int) (y * 256));
+            if(mDataLogFile != null)
+            {
+                mDataLogFile.writeInt((int) (angle * 100));
+                mDataLogFile.writeInt((int) (dist * 256));
+                mDataLogFile.writeInt((int) (x * 256));
+                mDataLogFile.writeInt((int) (y * 256));
+            }
         } 
         catch (IOException e)
         {
@@ -239,8 +260,24 @@ public class LidarProcessor implements Loop
     public void addPoint(double ts, double angle, double dist, 
                                       boolean newScan) 
     {
+
+        // transform by the robot's pose
+        Pose2d robotPose = null;
+        if(this.mMode == OperatingMode.kAbsolute)
+        {
+            if (sRobotPoseMap.containsKey(ts)) 
+            {
+                robotPose = sRobotPoseMap.get(ts);
+            } 
+            else
+            {
+                robotPose = Main.getRobotPose(ts);
+                if(robotPose != null)
+                    sRobotPoseMap.put(ts, robotPose);
+            }
+        }
         LidarPoint lpt = new LidarPoint(ts, angle, dist); 
-        Translation2d cartesian = lpt.toCartesian(); // converts to field position
+        Translation2d cartesian = lpt.toCartesian(robotPose);
         logPoint(lpt.angle, lpt.distance, cartesian.x(), cartesian.y());
         if (newScan || mActiveScan == null) 
         { 
