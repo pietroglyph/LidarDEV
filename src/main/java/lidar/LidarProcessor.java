@@ -90,7 +90,6 @@ public class LidarProcessor implements Loop
         }
     };
 
-
     public LidarProcessor() 
     {
         Logger.debug("LidarProcessor starting...");

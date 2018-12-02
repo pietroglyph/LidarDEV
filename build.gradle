@@ -8,6 +8,7 @@
 
 // Apply the java plugin to add support for Java
 apply plugin: 'java'
+
 // Apply the application plugin so we can do ./gradlew run
 apply plugin: 'application'
 
