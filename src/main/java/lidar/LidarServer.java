@@ -196,7 +196,7 @@ public class LidarServer
                     if (mBufferedReader.ready())
                     {
                         String line = mBufferedReader.readLine();
-                        if (line == null) // EOF
+                        if (line == null || !isLidarConnected()) // EOF or disconnected
                         { 
                             throw new EOFException("End of chezy-lidar process InputStream");
                         }

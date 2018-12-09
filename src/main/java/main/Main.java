@@ -1,12 +1,17 @@
 package main;
 
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
-import java.awt.geom.Dimension2D;
-import java.awt.geom.Point2D;
-import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
+import java.awt.GridLayout;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.Scanner;
 
+import javax.swing.BorderFactory;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 
@@ -32,21 +37,28 @@ public class Main
         LidarProcessor mLidarProcessor;
         Logger.setVerbosity("DEBUG");
 
-        if (args.length > 0 && args[0].equals("--display")) {
-            Logger.debug("Displaying debug window...");
+        if (args.length > 0 && args[0].equals("--debug")) {
+            Logger.debug("Displaying debug window... Press p to pause collection at next scan.");
             JFrame debugDisplayFrame = new JFrame("Spartronics Lidar Debug");
+
             mDebugDisplayPanel = new LidarDebugPanel();
             debugDisplayFrame.add(mDebugDisplayPanel);
-            debugDisplayFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+            debugDisplayFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            debugDisplayFrame.pack();
+            debugDisplayFrame.setLocationRelativeTo(null);
             debugDisplayFrame.setVisible(true);
+            debugDisplayFrame.setExtendedState(JFrame.MAXIMIZED_BOTH);
         }
 
         mLooper = new Looper();
         mLidarProcessor = new LidarProcessor();
         mLooper.register(mLidarProcessor);
         boolean started = mLidarProcessor.isConnected();
-        if(!started)
-            return;
+        if(!started) {
+            Logger.error("Lidar is not connected");
+            System.exit(1);
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
@@ -62,12 +74,19 @@ public class Main
         double ts = System.currentTimeMillis() / 1000d;
         sPoses.put(new InterpolatingDouble(ts), zeroPose);
         mLooper.start();
+
+        Scanner stdin = new Scanner(System.in);
         while (true)
         {
             try
             {
                 // Lidar Processing occurs in LidarProcessor
                 Thread.sleep(200);
+                if (stdin.hasNext("p"))
+                {
+                    stdin.next();
+                    mLidarProcessor.togglePaused();
+                }
             }
             catch(Exception e)
             {
@@ -85,13 +104,33 @@ public class Main
     {
         sPoses.put(new InterpolatingDouble(timestamp), pose);
         if (mDebugDisplayPanel != null)
+        {
             mDebugDisplayPanel.setPose(pose);
-        Logger.debug(pose.toString());
+            mDebugDisplayPanel.repaint();
+        }
+    }
+
+    public static void logLidarPoint(Translation2d point)
+    {
+        if (mDebugDisplayPanel != null)
+        {
+            mDebugDisplayPanel.addPoint(point);
+            mDebugDisplayPanel.repaint();
+        }
     }
 
     private static class LidarDebugPanel extends JPanel
     {
         private Translation2d lastTranslation = new Translation2d(), currentTranslation = new Translation2d();
+        private ArrayList<Translation2d> pointsToAdd = new ArrayList<Translation2d>();
+        private Image imageBuffer;
+
+        private static final int kLidarPointDiameter = 3; // In user space pixels
+
+        public LidarDebugPanel()
+        {
+            super(new GridLayout(1, 1));
+        }
 
         public void setPose(Pose2d pose)
         {
@@ -99,11 +138,39 @@ public class Main
             currentTranslation = normalizeToGraphicsCoords(pose);
         }
 
+        public void addPoint(Translation2d point)
+        {
+            synchronized (pointsToAdd)
+            {
+                pointsToAdd.add(normalizeToGraphicsCoords(point));
+            }
+        }
+
         @Override
         protected void paintComponent(Graphics g)
         {
-            g.drawLine((int) lastTranslation.getTranslation().x(), (int) lastTranslation.getTranslation().y(),
+            if (imageBuffer == null)
+            {
+                imageBuffer = this.createImage(this.getWidth(), this.getHeight());
+                return;
+            }
+            Graphics bufGraphics = imageBuffer.getGraphics();
+
+            synchronized (pointsToAdd)
+            {
+                for (int i = 0; i < pointsToAdd.size(); i++)
+                {
+                    bufGraphics.drawOval((int) pointsToAdd.get(i).x(), (int) pointsToAdd.get(i).y(), kLidarPointDiameter, kLidarPointDiameter);
+                    pointsToAdd.remove(i);
+                }
+            }
+
+            bufGraphics.setColor(Color.RED);
+            bufGraphics.drawLine((int) lastTranslation.getTranslation().x(), (int) lastTranslation.getTranslation().y(),
                 (int) currentTranslation.getTranslation().x(), (int) currentTranslation.getTranslation().y());
+            bufGraphics.setColor(Color.BLACK);
+
+            g.drawImage(imageBuffer, 0, 0, null);
         }
 
         private Translation2d normalizeToGraphicsCoords(Pose2d pose)
@@ -113,9 +180,9 @@ public class Main
 
         private Translation2d normalizeToGraphicsCoords(Translation2d translation)
         {
-            // Assumes we won't overflow
-            return new Translation2d(Math.round((translation.x() / Constants.kFieldWidth) * this.getX()),
-                Math.round((translation.y() / Constants.kFieldHeight) * this.getY()));
+            return new Translation2d(Math.round((translation.x() / Constants.kFieldWidth) * this.getWidth() + this.getWidth() / 2),
+                Math.round((translation.y() / Constants.kFieldHeight) * this.getHeight() + this.getHeight() / 2));
         }
     }
 }
+

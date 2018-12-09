@@ -3,6 +3,7 @@ package lib.util;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -75,8 +76,10 @@ public class Logger
     
     public static void exception(Exception e)
     {
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
         logMarker("EXCEPT  " + e.getMessage() + 
-                " trace:\n" +  e.getStackTrace(), true);
+                " trace:\n" +  sw.toString(), true);
     }
 
     public static void error(String m)

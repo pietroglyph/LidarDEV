@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -66,6 +65,8 @@ public class LidarProcessor implements Loop
     private LinkedBlockingQueue<LidarScan> mScanQueue;
     private LidarScan mActiveScan;
     private final OperatingMode mMode = OperatingMode.kRelative;
+    private Pose2d mLastFieldPose = new Pose2d();
+    private boolean mPaused = false;
 
     // A scan is a collection of lidar points.  The scan, itself,
     // has a timestamp as does each point.  Currently, the timestamp
@@ -122,10 +123,14 @@ public class LidarProcessor implements Loop
         return mLidarServer.isLidarConnected();
     }
 
+    public void togglePaused()
+    {
+        mPaused = !mPaused;
+    }
+
     @Override
     public void onStart(double timestamp) 
-    {
-    }
+    {}
 
     @Override
     public void onLoop(double timestamp) 
@@ -175,17 +180,19 @@ public class LidarProcessor implements Loop
         mLidarServer.stop();
     }
 
+    
     private void processLidarScan(LidarScan scan)
     {
         try
         {
-            Pose2d p;
+            Pose2d p = null;
             if(mMode == OperatingMode.kRelative)
             {
                 Transform xform = mRelativeICP.doRelativeICP(scan.getPoints());
                 if(xform != null)
                 {
                     p  = xform.inverse().toPose2d();
+                    p.transformBy(mLastFieldPose);
                     Logger.debug("relativeICP: " + p.toString());
                 }
             } 
@@ -198,10 +205,8 @@ public class LidarProcessor implements Loop
                 p  = xform.inverse().toPose2d();
                 Logger.debug("absoluteICP: " + p.toString());
             }
-            // until robot is actually moving, we don't want
-            // to update robot pose. That is, we expect the
-            // "same" point cloud each iteration.
-            // sPoses.put(new InterpolatingDouble(ts), zeroPose);
+            Main.putRobotPose(System.currentTimeMillis() / 1000d, p);
+            mLastFieldPose = p;
         }
         catch(Exception e)
         {
@@ -231,7 +236,7 @@ public class LidarProcessor implements Loop
         return new FileOutputStream(newFile, false);
     }
 
-    // logPoint is invoked from 
+    // logPoint is invoked from handleLine
     private void logPoint(double angle, double dist, double x, double y)
     {
         try 
@@ -243,6 +248,7 @@ public class LidarProcessor implements Loop
                 mDataLogFile.writeInt((int) (x * 256));
                 mDataLogFile.writeInt((int) (y * 256));
             }
+            Main.logLidarPoint(new Translation2d(x, y));
         } 
         catch (IOException e)
         {
@@ -259,7 +265,6 @@ public class LidarProcessor implements Loop
     public void addPoint(double ts, double angle, double dist, 
                                       boolean newScan) 
     {
-
         // transform by the robot's pose
         Pose2d robotPose = null;
         if(this.mMode == OperatingMode.kAbsolute)
@@ -277,9 +282,14 @@ public class LidarProcessor implements Loop
         }
         LidarPoint lpt = new LidarPoint(ts, angle, dist); 
         Translation2d cartesian = lpt.toCartesian(robotPose);
-        logPoint(lpt.angle, lpt.distance, cartesian.x(), cartesian.y());
         if (newScan || mActiveScan == null) 
-        { 
+        {
+            if (mPaused)
+            {
+                mActiveScan = null;
+                return;
+            }
+
             if(mActiveScan != null)
                 mScanQueue.add(mActiveScan); // <- send it to consumer
 
@@ -289,6 +299,7 @@ public class LidarProcessor implements Loop
         if (!excludePoint(cartesian.x(), cartesian.y())) 
         {
             mActiveScan.addPoint(new Point(cartesian), lpt.timestamp);
+            logPoint(lpt.angle, lpt.distance, cartesian.x(), cartesian.y());
         }
     }
 
