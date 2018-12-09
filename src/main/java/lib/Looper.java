@@ -105,7 +105,7 @@ public class Looper
         if (running_)
         {
             Logger.notice("Looper stopping subsystem loops");
-            scheduler_.shutdown();
+            scheduler_.shutdownNow();
             synchronized (taskRunningLock_)
             {
                 running_ = false;

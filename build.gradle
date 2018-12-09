@@ -8,8 +8,14 @@
 
 // Apply the java plugin to add support for Java
 apply plugin: 'java'
-
 // Apply the application plugin so we can do ./gradlew run
-apply plugin: 'application'
+// apply plugin: 'application' (This does undesireable things with shutdown hooks; run run.sh instead)
 
-mainClassName = "main.Main"
+def mainClassName = "main.Main"
+
+jar {
+    destinationDir = file("./build")
+    manifest {
+        attributes "Main-Class": mainClassName
+    }
+}
