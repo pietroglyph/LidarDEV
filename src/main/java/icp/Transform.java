@@ -59,14 +59,6 @@ public class Transform {
         return new Segment(apply(s.line), s.tMin, s.tMax);
     }
 
-    public ReferenceModel apply(ReferenceModel rm) {
-        Segment[] ss = new Segment[rm.segments.length];
-        for (int i = 0; i < rm.segments.length; i++) {
-            ss[i] = apply(rm.segments[i]);
-        }
-        return new ReferenceModel(ss);
-    }
-
     public Transform inverse() {
         return new Transform(-theta,
                 -tx * cos - ty * sin,

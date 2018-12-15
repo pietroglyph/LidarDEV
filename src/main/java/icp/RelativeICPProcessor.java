@@ -1,7 +1,5 @@
 package icp;
 
-import lib.math.Pose2d;
-
 public class RelativeICPProcessor
 {
 

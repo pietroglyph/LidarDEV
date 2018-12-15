@@ -15,12 +15,15 @@ import javax.swing.BorderFactory;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 
+import icp.Point;
+import icp.Segment;
 import lib.Constants;
 import lib.Looper;
 import lib.util.InterpolatingDouble;
 import lib.util.InterpolatingTreeMap;
 import lib.util.Logger;
 import lib.math.Pose2d;
+import lib.math.Rotation2d;
 import lib.math.Translation2d;
 import lidar.LidarProcessor;
 
@@ -37,7 +40,7 @@ public class Main
         LidarProcessor mLidarProcessor;
         Logger.setVerbosity("DEBUG");
 
-        if (args.length > 0 && args[0].equals("--debug")) {
+        if (args.length > 0 && args[0].equals("--debug-display")) {
             Logger.debug("Displaying debug window... Press p to pause collection at next scan.");
             JFrame debugDisplayFrame = new JFrame("Spartronics Lidar Debug");
 
@@ -65,7 +68,7 @@ public class Main
             public void run() {
                 synchronized (mLooper) {
                     mLooper.stop();
-                    Runtime.getRuntime().halt(0); // System.exit will wait on this thread to finish
+                    Runtime.getRuntime().halt(0); // System::exit will wait on this thread to finish
                 }
             }
         });
@@ -86,6 +89,8 @@ public class Main
                 {
                     stdin.next();
                     mLidarProcessor.togglePaused();
+                    if (mDebugDisplayPanel != null)
+                        mDebugDisplayPanel.cyclePointCloudColor();
                 }
             }
             catch(Exception e)
@@ -97,7 +102,7 @@ public class Main
 
     public static Pose2d getRobotPose(double timestamp)
     {
-        return sPoses.get(new InterpolatingDouble(timestamp));
+        return sPoses.getInterpolated(new InterpolatingDouble(timestamp));
     }
 
     public static void putRobotPose(double timestamp, Pose2d pose)
@@ -121,9 +126,10 @@ public class Main
 
     private static class LidarDebugPanel extends JPanel
     {
-        private Translation2d lastTranslation = new Translation2d(), currentTranslation = new Translation2d();
+        private Translation2d lastTranslation = null, currentTranslation = null;
         private ArrayList<Translation2d> pointsToAdd = new ArrayList<Translation2d>();
         private Image imageBuffer;
+        private Color pointCloudColor = Color.BLUE;
 
         private static final int kLidarPointDiameter = 3; // In user space pixels
 
@@ -132,9 +138,9 @@ public class Main
             super(new GridLayout(1, 1));
         }
 
-        public void setPose(Pose2d pose)
+        public synchronized void setPose(Pose2d pose)
         {
-            lastTranslation = normalizeToGraphicsCoords(currentTranslation);
+            lastTranslation = currentTranslation;
             currentTranslation = normalizeToGraphicsCoords(pose);
         }
 
@@ -146,28 +152,50 @@ public class Main
             }
         }
 
+        public synchronized void cyclePointCloudColor()
+        {
+            pointCloudColor = new Color((float) Math.random(), (float) Math.random(), (float) Math.random());
+        }
+
         @Override
         protected void paintComponent(Graphics g)
         {
+            Graphics bufGraphics;
             if (imageBuffer == null)
             {
                 imageBuffer = this.createImage(this.getWidth(), this.getHeight());
+                bufGraphics = imageBuffer.getGraphics();
+                for (int i = 0; i < Constants.kSegmentReferenceModel.segments.length; i++)
+                {
+                    Segment s = normalizeToGraphicsCoords(Constants.kSegmentReferenceModel.segments[i]);
+                    bufGraphics.drawLine((int) s.pMin.x, (int) s.pMin.y, (int) s.pMax.x, (int) s.pMax.y);
+                }
                 return;
             }
-            Graphics bufGraphics = imageBuffer.getGraphics();
+            bufGraphics = imageBuffer.getGraphics();
 
+            synchronized (this)
+            {
+                bufGraphics.setColor(pointCloudColor);
+            }
             synchronized (pointsToAdd)
             {
                 for (int i = 0; i < pointsToAdd.size(); i++)
                 {
                     bufGraphics.drawOval((int) pointsToAdd.get(i).x(), (int) pointsToAdd.get(i).y(), kLidarPointDiameter, kLidarPointDiameter);
-                    pointsToAdd.remove(i);
                 }
+                pointsToAdd.clear();
             }
 
             bufGraphics.setColor(Color.RED);
-            bufGraphics.drawLine((int) lastTranslation.getTranslation().x(), (int) lastTranslation.getTranslation().y(),
-                (int) currentTranslation.getTranslation().x(), (int) currentTranslation.getTranslation().y());
+            synchronized (this)
+            {
+                if (lastTranslation != null && currentTranslation != null)
+                {
+                    bufGraphics.drawLine((int) lastTranslation.getTranslation().x(), (int) lastTranslation.getTranslation().y(),
+                        (int) currentTranslation.getTranslation().x(), (int) currentTranslation.getTranslation().y());
+                }
+            }
             bufGraphics.setColor(Color.BLACK);
 
             g.drawImage(imageBuffer, 0, 0, null);
@@ -182,6 +210,12 @@ public class Main
         {
             return new Translation2d(Math.round((translation.x() / Constants.kFieldWidth) * this.getWidth() + this.getWidth() / 2),
                 Math.round((translation.y() / Constants.kFieldHeight) * this.getHeight() + this.getHeight() / 2));
+        }
+
+        private Segment normalizeToGraphicsCoords(Segment segment)
+        {
+            return new Segment(new Point(normalizeToGraphicsCoords(segment.pMin.toTranslation2d())),
+                new Point(normalizeToGraphicsCoords(segment.pMax.toTranslation2d())));
         }
     }
 }

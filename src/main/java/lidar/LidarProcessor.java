@@ -6,7 +6,6 @@ import lib.Constants;
 import icp.ICP;
 import icp.Point;
 
-import icp.ReferenceModel;
 import icp.RelativeICPProcessor;
 import icp.Transform;
 
@@ -192,7 +191,7 @@ public class LidarProcessor implements Loop
                 if(xform != null)
                 {
                     p  = xform.inverse().toPose2d();
-                    p.transformBy(mLastFieldPose);
+                    p = p.transformBy(mLastFieldPose);
                     Logger.debug("relativeICP: " + p.toString());
                 }
             } 
@@ -201,7 +200,7 @@ public class LidarProcessor implements Loop
                 Pose2d guess = Main.getRobotPose(scan.getTimestamp());
                 Transform xform = mICP.doICP(getCulledPoints(scan), 
                                 new Transform(guess).inverse(), 
-                                ReferenceModel.TOWER);
+                                Constants.kSegmentReferenceModel);
                 p  = xform.inverse().toPose2d();
                 Logger.debug("absoluteICP: " + p.toString());
             }

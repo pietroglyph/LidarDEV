@@ -48,8 +48,7 @@ class LidarPoint
                                               Math.sin(radians) * distance);
         if(robotPose != null)
         {
-            robotPose.transformBy(Pose2d.fromTranslation(x2d));
-            return robotPose.getTranslation();
+            return robotPose.transformBy(Pose2d.fromTranslation(x2d)).getTranslation();
         }
         else
             return x2d;

@@ -3,8 +3,14 @@ package lib;
 
 import java.nio.file.Paths;
 
+import icp.IReferenceModel;
+import icp.Point;
+import icp.Segment;
+import icp.Transform;
+import icp.SegmentReferenceModel;
 import lib.math.Translation2d;
 import lib.util.ConstantsBase;
+import lib.util.SegmentBuilder;
 
 /**
  * A list of constants used by the rest of the robot code. 
@@ -76,6 +82,23 @@ public class Constants //extends ConstantsBase
     /* LIDAR CONSTANTS -------------------------------------------------------------------- */
     public static final int kLidarScanSize = 400;
     public static final int kLidarNumScansToStore = 10;
+    public static final SegmentReferenceModel kSegmentReferenceModel = new SegmentReferenceModel(
+        new SegmentBuilder(new Point(53, 0)).
+        verticalBy(30).
+        horizontalBy(18).
+        verticalBy(45).
+        horizontalBy(-26).
+        verticalBy(94).
+        horizontalBy(-61.5).
+        verticalBy(-49.5).
+        horizontalBy(13.5).
+        verticalBy(-39).
+        horizontalBy(3.5).
+        verticalBy(-35).
+        horizontalBy(-3.5).
+        verticalBy(-43).
+        getSegments()
+    );
 
     // XXX: This constant is not true for everyone.
     
